@@ -1,6 +1,6 @@
 {
   "name": "cb",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Drive a developer-mode Chromebook's Chrome from your Mac over Tailscale: tabs, screenshots, video, traces, FPS.",
   "license": "BSD-3-Clause",
   "type": "module",
@@ -12,9 +12,12 @@
     "install:local": "bun run build && mkdir -p ~/.local/bin && cp dist/cb ~/.local/bin/cb",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "check": "bun run typecheck && bun test"
+    "check": "bun run lint && bun run typecheck && bun test",
+    "lint": "biome check .",
+    "format": "biome check --write ."
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.4",
     "@types/bun": "^1.2.0",
     "typescript": "^5.8.0"
   }

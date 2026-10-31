@@ -1,14 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { owningPage } from '../src/command.ts';
-import { resolveTarget, type Target, visibleTargets } from '../src/targets.ts';
+import { owningPage, resolveTarget, visibleTargets } from '../src/targets.ts';
+import type { Target } from '../src/types.ts';
 
-const t = (id: string, type: string, url: string, title = url, parentId?: string): Target => ({
-  id,
-  type,
-  url,
-  title,
-  parentId,
-});
+/** Builds a target row; the title defaults to the URL, as Chrome does for iframes. */
+function t(id: string, type: string, url: string, title = url, parentId?: string): Target {
+  return { id, type, url, title, parentId };
+}
 
 const TARGETS: Target[] = [
   t('EXT00001', 'page', 'chrome-extension://abc/offscreen.html'),
@@ -34,16 +31,20 @@ describe('resolveTarget', () => {
   test('defaults to the first real tab, skipping extensions', () => {
     expect(resolveTarget(TARGETS).id).toBe('PAGE0001');
   });
+
   test('accepts an index from `cb tabs`', () => {
     expect(resolveTarget(TARGETS, '1').id).toBe('PAGE0002');
   });
+
   test('accepts an id prefix', () => {
     expect(resolveTarget(TARGETS, 'iframe').id).toBe('IFRAME01');
   });
+
   test('matches URL or title text, tabs first', () => {
     expect(resolveTarget(TARGETS, 'news').id).toBe('PAGE0002');
     expect(resolveTarget(TARGETS, 'game.example').id).toBe('IFRAME01');
   });
+
   test('explains a miss', () => {
     expect(() => resolveTarget(TARGETS, 'nope')).toThrow('nothing matches "nope"');
     expect(() => resolveTarget(TARGETS, '9')).toThrow('no target at index 9');
@@ -55,6 +56,7 @@ describe('owningPage', () => {
   test('walks an iframe up to its tab', () => {
     expect(owningPage(TARGETS[1]!, TARGETS).id).toBe('PAGE0001');
   });
+
   test('leaves a tab alone', () => {
     expect(owningPage(TARGETS[3]!, TARGETS).id).toBe('PAGE0002');
   });

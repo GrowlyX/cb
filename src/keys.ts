@@ -1,13 +1,7 @@
-/** The fields `Input.dispatchKeyEvent` needs for one key. */
-export interface KeySpec {
-  key: string;
-  code: string;
-  keyCode: number;
-  /** Set for keys that type a character. */
-  text?: string;
-}
+import type { KeySpec } from './types.ts';
 
-const NAMED: Record<string, KeySpec> = {
+/** Keys known by name, keyed by lowercase name. */
+const NAMED_KEYS: Record<string, KeySpec> = {
   enter: { key: 'Enter', code: 'Enter', keyCode: 13, text: '\r' },
   escape: { key: 'Escape', code: 'Escape', keyCode: 27 },
   esc: { key: 'Escape', code: 'Escape', keyCode: 27 },
@@ -32,19 +26,31 @@ const NAMED: Record<string, KeySpec> = {
 /** Parses names like `enter`, `w`, `7`, `f3` or `arrowup` (case-insensitive) into a key. */
 export function parseKey(name: string): KeySpec {
   const lower = name.toLowerCase();
-  const named = NAMED[lower] ?? NAMED[lower.replace(/^arrow/, '')];
-  if (named) return { ...named };
+  const named = NAMED_KEYS[lower] ?? NAMED_KEYS[lower.replace(/^arrow/, '')];
+
+  if (named) {
+    return { ...named };
+  }
 
   const fn = /^f([1-9]|1[0-2])$/.exec(lower);
+
   if (fn) {
     const n = Number(fn[1]);
+
     return { key: `F${n}`, code: `F${n}`, keyCode: 111 + n };
   }
+
   if (/^[a-z]$/.test(lower)) {
-    return { key: name, code: `Key${lower.toUpperCase()}`, keyCode: lower.toUpperCase().charCodeAt(0), text: name };
+    const upper = lower.toUpperCase();
+
+    return { key: name, code: `Key${upper}`, keyCode: upper.charCodeAt(0), text: name };
   }
+
   if (/^[0-9]$/.test(lower)) {
     return { key: lower, code: `Digit${lower}`, keyCode: lower.charCodeAt(0), text: lower };
   }
-  throw new Error(`unknown key "${name}" (try a letter, a digit, f1-f12, enter, escape, space, tab, up/down/left/right)`);
+
+  throw new Error(
+    `unknown key "${name}" (try a letter, a digit, f1-f12, enter, escape, space, tab, up/down/left/right)`,
+  );
 }

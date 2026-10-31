@@ -1,11 +1,12 @@
 # cb
 
 Drive a developer-mode Chromebook's Chrome from your Mac (or any machine) over Tailscale:
-list and open tabs, take screenshots, record video, measure frame rate, record performance
-traces, send clicks and keys, and get a root shell.
+list and open tabs, take screenshots, record video, monitor frame rate and system load live,
+record CPU profiles and performance traces, send clicks and keys, and get a root shell.
 
-It exists to profile web apps and WebGL games on the cheap Chromebooks people actually use,
-without a cable and without the Chromebook being on the same network.
+It exists to measure web apps, WebGL games and anything else that runs in a browser on the
+cheap Chromebooks people actually use, without a cable and without the Chromebook being on the
+same network.
 
 ```console
 $ cb status
@@ -18,14 +19,27 @@ temps    x86_pkg_temp 39°C, TCPU 34°C
 uptime   34m
 tabs     1 open
 
-$ cb fps -d 3
-measuring "Play Eaglercraft online: free browser Minecraft" for 3s
-fps          60.0
-frame time   p50 16.7ms  p95 16.7ms  p99 16.8ms  max 16.8ms
-slow frames  0 over 33ms, 0 over 50ms (of 180)
+$ cb monitor -d 6
+time     fps   p95     slow main  heap   cpu   free    MHz   temp
+23:51:31 60.0  16.8ms  0    10%   149MB  17%   1272MB  800   40°C
+23:51:32 60.0  16.8ms  0    13%   149MB  19%   1270MB  799   41°C
+23:51:33 48.7  33.4ms  2    73%   148MB  47%   1261MB  2800  41°C
+23:51:34 59.2  16.7ms  0    10%   148MB  69%   1255MB  800   42°C
+23:51:35 60.0  16.8ms  0    7%    148MB  16%   1268MB  800   42°C
 
+summary over 6s
+fps          57.7 avg, 30.0 1% low, 48.7 worst interval
+frame time   p95 16.8ms  p99 33.3ms
+slow frames  2 over 33ms, 1 over 50ms (of 329)
+main thread  23% avg, 73% max
+JS heap      149MB → 148MB, 149MB max
+system cpu   34% avg, 69% max
+memory       1255MB available at worst
+cpu clock    799-2800 MHz
+hottest      42°C
+
+$ cb profile -d 10      # which JS functions cost the most
 $ cb record -d 15 -o run.mp4
-$ cb trace -d 10
 ```
 
 ## How it works
@@ -107,16 +121,19 @@ Capture:
   record    Record a tab to an MP4 (Ctrl+C stops early)
 
 Performance:
+  monitor   Live dashboard of page frame rate and main thread with Chromebook CPU, memory, clock and heat
   fps       Measure frame rate and frame-time percentiles in a tab or iframe
   metrics   Live main-thread load and memory for a tab or iframe, once a second
+  profile   Record a JavaScript CPU profile of a tab or iframe and list the slowest functions
   trace     Record a performance trace (open it in DevTools or ui.perfetto.dev) and summarize it
+  vitals    Page load timing, Largest Contentful Paint, layout shift and resource totals for a tab
 
 Input:
   click     Click at a point in a tab (CSS pixels from the top left)
   move      Move the mouse to a point in a tab
   scroll    Scroll the mouse wheel at a point
   type      Type text into whatever has focus
-  key       Press a key, optionally holding it (e.g. walk forward in a game)
+  key       Press a key, optionally holding it (e.g. to move in a game)
 ```
 
 `cb help <command>` shows each command's options.
@@ -129,19 +146,39 @@ cross-site iframe with its own renderer, and that's the frame `cb fps`, `cb metr
 `cb eval` should target. Screenshots, video and input always act on the tab, so an iframe
 selector there means "the tab this iframe is in".
 
-### Profiling tips
+### Monitoring performance
+
+Start with `cb monitor`, then dig in with the tool it points to.
+
+| Tool | What it answers | Cost on the Chromebook |
+|---|---|---|
+| `cb monitor` | Is it smooth, and if not, is the page, the CPU, memory or heat to blame? One row per second, then a summary with warnings. `--csv` saves every row. | Low |
+| `cb fps` | Frame rate and frame-time percentiles over a fixed window. | Low |
+| `cb metrics` | Main-thread busy share, JS heap and DOM size, live. | Low |
+| `cb profile` | Which JavaScript functions take the time. Opens in DevTools or speedscope. | Medium |
+| `cb trace` | Everything, across every process: tasks, GC, frames, GPU. Opens in DevTools or Perfetto. | High |
+| `cb vitals` | How the page loaded: TTFB, FCP, LCP, layout shift, resources. | None |
+| `cb top`, `cb gpu` | What else is using the CPU and memory; whether WebGL is hardware accelerated. | None |
+
+`cb monitor` warns about:
+
+- **heap growth** over the session (a leak, or caches still filling)
+- **main thread saturation** (CPU bound in the page: run `cb profile`)
+- **system CPU saturation** (every core busy: check `cb top`)
+- **low available memory** (ChromeOS starts compressing memory and discarding tabs)
+- **throttling**: the CPU clock falling well below its peak while the CPU is busy. A slow
+  clock while idle is normal power saving and isn't flagged.
+
+### Tips
 
 - **Measure and record separately.** Screencasting costs a low-end CPU real time, so frame rates
-  measured during `cb record` are pessimistic. `cb fps` and `cb metrics` are cheap.
-- **Keep the lid open and the screen on** while capturing. ChromeOS stops painting with the
-  screen off, so screenshots time out and `fps` sees no frames.
-- **`cb trace`** records every process. The summary ranks processes by main-thread load and shows
-  long tasks, GC time, animation-frame rate and JS heap. Open the file in the DevTools
-  Performance panel (Load profile) or [ui.perfetto.dev](https://ui.perfetto.dev) for the
-  flame chart.
-- **`cb top`** and `cb status` show memory pressure. On 4 GB Chromebooks, the Android container
-  (`crosvm ... ARCVM`) alone can hold most of a gigabyte.
-- **`cb gpu`** tells you whether WebGL is hardware accelerated and which backend ANGLE uses.
+  measured during `cb record` are pessimistic.
+- **Keep the lid open and the screen on** while measuring. ChromeOS stops painting with the
+  screen off, so screenshots time out and frame counters see nothing.
+- **Point `-t` at the frame that draws.** A page that renders in a cross-site iframe runs its
+  JavaScript in that iframe's renderer; `cb tabs --all` lists them.
+- **Memory pressure is common on 4 GB Chromebooks.** The Android container (`crosvm ... ARCVM`)
+  alone can hold most of a gigabyte; turning off Google Play frees it.
 
 ## Configuration
 
@@ -173,9 +210,13 @@ root key. The setup script warns if that server is running.
 ## Development
 
 ```sh
-bun run check      # typecheck + tests
+bun run check      # lint and format check (Biome), typecheck, tests
+bun run format     # apply Biome's formatting and safe fixes
 bun src/cli.ts ... # run without building
 ```
+
+Types live in `src/types.ts`. Commands are in `src/commands/`, one file per group; anything
+that can be tested without a Chromebook (parsing, summaries, page scripts) lives in `src/`.
 
 ## License
 
