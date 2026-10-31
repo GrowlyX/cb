@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.mp4
+*.png
+*.jpg
+*.trace.json
+cb-*/
+.DS_Store
